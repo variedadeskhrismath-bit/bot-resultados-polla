@@ -1,26 +1,28 @@
 name: Executar Scraper Polla
 
 on:
+  workflow_dispatch: # Permite ejecutar manualmente
   schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *' # Se ejecuta cada hora (opcional)
 
 jobs:
   ejecutar-scraper:
     runs-on: ubuntu-latest
+
     steps:
       - name: Descargar repositorio
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configurar Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar librerías
+      - name: Instalar librerías necesarias
         run: |
-          pip install requests beautifulsoup4
+          python -m pip install --upgrade pip
+          pip install firebase-admin requests beautifulsoup4
 
-      - name: Ejecutar el Scraper
+      - name: Ejecutar script
         run: python scraper.py
 

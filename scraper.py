@@ -1,85 +1,55 @@
-import json
-from bs4 import BeautifulSoup
+import firebase_admin
+from firebase_admin import credentials, db
 import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
 
-FIREBASE_URL = (
-    "https://polla-la-fortuna002-8bd4a-default-rtdb.firebaseio.com/polla_data"
-)
+# 1. Configuración de la base de datos Realtime con tu nuevo proyecto
+DATABASE_URL = "https://polla-la-fortuna002-default-rtdb.firebaseio.com/"
 
+# Evita reinicializar Firebase si el proceso se ejecuta varias veces
+if not firebase_admin._apps:
+    # Si usas credenciales por Service Account en GitHub Secrets
+    # cred = credentials.Certificate('path/to/credentials.json')
+    # firebase_admin.initialize_app(cred, {'databaseURL': DATABASE_URL})
+    
+    # Si inicializas con credenciales por defecto o anónimas/modo test:
+    firebase_admin.initialize_app(options={
+        'databaseURL': DATABASE_URL
+    })
 
-def ejecutar_scraper_y_aciertos():
-  url = "https://loteriadehoy.com/animalitos/lotto-activo/"
-  headers = {
-      "User-Agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-          " like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      )
-  }
+# Referencia directa al nodo principal del proyecto
+ref = db.reference('polla_data')
 
-  try:
-    print("🔎 Intentando conectar con Loteriadehoy...")
-    res = requests.get(url, headers=headers, timeout=15)
-    print(f"Respuesta HTTP: {res.status_code}")
+def actualizar_datos_polla():
+    """
+    Función principal para hacer scraping e ingerir los datos directamente
+    en la estructura requerida por Polla La Fortuna.
+    """
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    
+    # Ejemplo de estructura a enviar/actualizar
+    # (Ajusta los selectores según tu lógica de extracción de lotería)
+    print(f"Iniciando actualización para la fecha: {hoy}...")
 
-    resultados = {}
-    if res.status_code == 200:
-      soup = BeautifulSoup(res.text, "html.parser")
-      filas = soup.find_all("tr")
-
-      for fila in filas:
-        celdas = fila.find_all("td")
-        if len(celdas) >= 2:
-          hora = celdas[0].text.strip()
-          num_limpio = "".join(filter(str.isdigit, celdas[1].text.strip()))
-          if hora and num_limpio:
-            resultados[hora] = num_limpio.zfill(2)
-
-      print(f"📊 Resultados encontrados: {resultados}")
-
-      if resultados:
-        requests.patch(
-            f"{FIREBASE_URL}/resultados.json", data=json.dumps(resultados)
-        )
-        print("✅ Resultados guardados en Firebase.")
-
-    # 2. Re-calcular aciertos
-    print("🔄 Recalculando aciertos...")
-    res_sorteos = requests.get(f"{FIREBASE_URL}/resultados.json")
-    r_res = res_sorteos.json() if res_sorteos.status_code == 200 else {}
-    ganadores = set(r_res.values()) if isinstance(r_res, dict) else set()
-
-    res_part = requests.get(f"{FIREBASE_URL}/participantes.json")
-    r_part = res_part.json() if res_part.status_code == 200 else {}
-
-    if r_part:
-      if isinstance(r_part, dict):
-        for clave, jugador in r_part.items():
-          if isinstance(jugador, dict):
-            jugadas = set(jugador.get("jugadas", []))
-            aciertos = len(jugadas.intersection(ganadores))
-            requests.patch(
-                f"{FIREBASE_URL}/participantes/{clave}.json",
-                data=json.dumps({"aciertos": aciertos}),
-            )
-      elif isinstance(r_part, list):
-        for i, jugador in enumerate(r_part):
-          if isinstance(jugador, dict):
-            jugadas = set(jugador.get("jugadas", []))
-            aciertos = len(jugadas.intersection(ganadores))
-            requests.patch(
-                f"{FIREBASE_URL}/participantes/{i}.json",
-                data=json.dumps({"aciertos": aciertos}),
-            )
-
-      print("🎯 Aciertos calculados con éxito.")
-
-  except Exception as e:
-    print(f"❌ Error durante el proceso: {e}")
-
+    # Referencia al nodo de resultados de hoy
+    resultados_ref = ref.child('resultados').child(hoy)
+    
+    # AQUÍ TU LÓGICA DE SCRAPING DE LAS LOTERÍAS (Lotto Activo, La Granjita, Selva Plus)
+    # Ejemplo de envío/actualización de un sorteo:
+    nuevo_resultado = {
+        "loteria": "Lotto Activo",
+        "sorteo": "09:00 AM",
+        "resultado": "04"
+    }
+    
+    # Guardar/Actualizar en Firebase
+    resultados_ref.push(nuevo_resultado)
+    print("¡Datos enviados con éxito a Firebase!")
 
 if __name__ == "__main__":
-  ejecutar_scraper_y_aciertos()
+    actualizar_datos_polla()
 
- 
- 
-   
+
+  
+          

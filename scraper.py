@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import requests
 
 FIREBASE_URL = (
-    "https://polla-la-fortuna00-8bd4a-default-rtdb.firebaseio.com/polla_data"
+    "https://polla-la-fortuna002-8bd4a-default-rtdb.firebaseio.com/polla_data"
 )
 
 

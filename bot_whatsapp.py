@@ -12,15 +12,13 @@ FIREBASE_URL = (
 
 
 # --- FUNCIÓN PARA ENVIAR MENSAJES A TRAVÉS DE ULTRAMSG ---
-def enviar_ultramsg(remitente, texto):
-  """Envía un mensaje de texto de WhatsApp utilizando la API de UltraMsg."""
+def enviar_ultramsg(destino, texto):
+  """Envía un mensaje a un chat privado o a un GRUPO de WhatsApp."""
   instance_id = os.getenv("ULTRAMSG_INSTANCE", "instance187157")
-  token = os.getenv(
-      "ULTRAMSG_TOKEN", "TU_TOKEN_AQUI"
-  )  # Se tomará del Environment de Render
+  token = os.getenv("ULTRAMSG_TOKEN", "TU_TOKEN_AQUI")
 
   url = f"https://api.ultramsg.com/{instance_id}/messages/chat"
-  payload = {"token": token, "to": remitente, "body": texto}
+  payload = {"token": token, "to": destino, "body": texto}
   headers = {"content-type": "application/x-www-form-urlencoded"}
 
   try:
@@ -41,7 +39,6 @@ def guardar_participante_firebase(nombre, telefono, jugadas):
         res.json() if res.status_code == 200 and res.json() else []
     )
 
-    # Si Firebase devuelve un dict en lugar de lista, lo adaptamos
     if isinstance(participantes, dict):
       participantes = list(participantes.values())
 
@@ -49,7 +46,7 @@ def guardar_participante_firebase(nombre, telefono, jugadas):
     nuevo_jugador = {
         "nombre": nombre,
         "telefono": telefono,
-        "jugadas": jugadas,  # Lista de números/animalitos (ej: ["01", "12", "05"])
+        "jugadas": jugadas,  # Lista de números/animalitos
         "aciertos": 0,
     }
 
@@ -61,42 +58,57 @@ def guardar_participante_firebase(nombre, telefono, jugadas):
     )
     return True
   except Exception as e:
-    print(f"❌ Error guardando participante: {e}")
+    print(f"❌ Error guardando participante en Firebase: {e}")
     return False
 
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-  """Recibe las alertas de mensajes desde el conector de WhatsApp."""
+  """Recibe las alertas de mensajes desde UltraMsg (Grupos y Chats)."""
   data = request.json
 
   if not data:
     return jsonify({"status": "no data"}), 400
 
-  # Extraer el mensaje y remitente según estructura típica de UltraMsg
   data_payload = data.get("data", data)
+
+  # Ignorar mensajes enviados por el propio bot para evitar bucles infinitos
+  if data_payload.get("fromMe") is True:
+    return jsonify({"status": "ignored self message"}), 200
+
   mensaje = data_payload.get("body", "").strip()
-  remitente = data_payload.get("from", "")  # Número de teléfono del remitente
 
-  print(f"📩 Mensaje recibido de {remitente}: {mensaje}")
+  # 'chat_id' es el ID del Grupo o Chat (a donde responderá el bot)
+  chat_id = data_payload.get("from", "")
 
-  if not mensaje or not remitente:
+  # 'remitente_real' es el número exacto del usuario dentro del grupo
+  remitente_real = data_payload.get("author", data_payload.get("from", ""))
+
+  print(
+      f"📩 Mensaje recibido en {chat_id} de {remitente_real}:"
+      f" {mensaje}"
+  )
+
+  if not mensaje or not chat_id:
     return jsonify({"status": "ignored"}), 200
 
-  # Lógica básica de respuesta
+  # --- LÓGICA DE RESPUESTA Y REGISTRO ---
+
+  # 1. Comando Hola / Menu
   if mensaje.lower() in ["hola", "buenas", "inicio", "menu"]:
     respuesta = (
         "🤖 *¡Bienvenido a Polla La Fortuna!* 🍀\n\n"
-        "Para registrar tu jugada, envía tu mensaje con el siguiente"
-        " formato:\n\n"
+        "Para registrar tu jugada en este grupo, envía un mensaje con el"
+        " siguiente formato:\n\n"
         "*REGISTRO* / Tu Nombre / Tus 10 Animalitos o Números separados por"
         " coma.\n\n"
         "📌 *Ejemplo:*\n"
         '"REGISTRO / Maria Perez / 01, 05, 12, 18, 20, 22, 25, 30, 33, 36"'
     )
-    enviar_ultramsg(remitente, respuesta)
+    enviar_ultramsg(chat_id, respuesta)
     return jsonify({"status": "success"}), 200
 
+  # 2. Comando REGISTRO
   elif mensaje.upper().startswith("REGISTRO"):
     try:
       partes = mensaje.split("/")
@@ -106,17 +118,20 @@ def webhook():
         jugadas = [j.strip() for j in jugadas_raw if j.strip()]
 
         if len(jugadas) > 0:
-          exito = guardar_participante_firebase(nombre, remitente, jugadas)
+          # Guardamos en Firebase usando el número real del participante
+          exito = guardar_participante_firebase(
+              nombre, remitente_real, jugadas
+          )
           if exito:
             respuesta = (
                 f"✅ *¡Registro Exitoso, {nombre}!*\n\n"
-                f"🎮 *Jugadas:* {', '.join(jugadas)}\n"
-                "📊 Ya puedes consultar tu posición en vivo en la página web."
+                f"🎮 *Jugadas registradas:* {', '.join(jugadas)}\n"
+                "📊 Ya puedes consultar la tabla general en la página web."
             )
           else:
             respuesta = (
-                "⚠️ Hubo un detalle guardando tu jugada. Intenta de nuevo en"
-                " unos minutos."
+                "⚠️ Hubo un detalle guardando tu jugada en el sistema. Intenta"
+                " de nuevo."
             )
         else:
           respuesta = (
@@ -124,13 +139,12 @@ def webhook():
           )
       else:
         respuesta = (
-            "⚠️ Formato incorrecto. Recuerda usar: *REGISTRO / Nombre /"
-            " Números*"
+            "⚠️ Formato incorrecto. Usa: *REGISTRO / Nombre / Números*"
         )
     except Exception as e:
       respuesta = "⚠️ Ocurrió un error al procesar tu registro."
 
-    enviar_ultramsg(remitente, respuesta)
+    enviar_ultramsg(chat_id, respuesta)
     return jsonify({"status": "success"}), 200
 
   return jsonify({"status": "ignored"}), 200
@@ -139,5 +153,3 @@ def webhook():
 if __name__ == "__main__":
   app.run(host="0.0.0.0", port=5000)
 
-
-                      

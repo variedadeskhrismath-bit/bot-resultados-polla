@@ -1,54 +1,44 @@
-import firebase_admin
-from firebase_admin import credentials, db
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime
+import requests
 
-# 1. Configuración de la base de datos Realtime con tu nuevo proyecto
-DATABASE_URL = "https://polla-la-fortuna002-default-rtdb.firebaseio.com/"
+# 1. Configuración de tu Realtime Database (usando REST API)
+# Añadimos /polla_data.json al final para apuntar al nodo correcto
+DATABASE_URL = (
+    'https://polla-la-fortuna002-default-rtdb.firebaseio.com/polla_data.json'
+)
 
-# Evita reinicializar Firebase si el proceso se ejecuta varias veces
-if not firebase_admin._apps:
-    # Si usas credenciales por Service Account en GitHub Secrets
-    # cred = credentials.Certificate('path/to/credentials.json')
-    # firebase_admin.initialize_app(cred, {'databaseURL': DATABASE_URL})
-    
-    # Si inicializas con credenciales por defecto o anónimas/modo test:
-    firebase_admin.initialize_app(options={
-        'databaseURL': DATABASE_URL
-    })
-
-# Referencia directa al nodo principal del proyecto
-ref = db.reference('polla_data')
 
 def actualizar_datos_polla():
-    """
-    Función principal para hacer scraping e ingerir los datos directamente
-    en la estructura requerida por Polla La Fortuna.
-    """
-    hoy = datetime.now().strftime("%Y-%m-%d")
-    
-    # Ejemplo de estructura a enviar/actualizar
-    # (Ajusta los selectores según tu lógica de extracción de lotería)
-    print(f"Iniciando actualización para la fecha: {hoy}...")
+  """Función principal para hacer scraping e ingerir los datos en Firebase."""
+  hoy = datetime.now().strftime('%Y-%m-%d')
+  print(f'Iniciando actualización para la fecha: {hoy}...')
 
-    # Referencia al nodo de resultados de hoy
-    resultados_ref = ref.child('resultados').child(hoy)
-    
-    # AQUÍ TU LÓGICA DE SCRAPING DE LAS LOTERÍAS (Lotto Activo, La Granjita, Selva Plus)
-    # Ejemplo de envío/actualización de un sorteo:
-    nuevo_resultado = {
-        "loteria": "Lotto Activo",
-        "sorteo": "09:00 AM",
-        "resultado": "04"
-    }
-    
-    # Guardar/Actualizar en Firebase
-    resultados_ref.push(nuevo_resultado)
-    print("¡Datos enviados con éxito a Firebase!")
+  # AQUÍ IRÁ TU LÓGICA DE SCRAPING
+  # Ejemplo de datos a enviar:
+  datos_a_enviar = {
+      'fecha_actualizacion': hoy,
+      'resultados': {
+          'Lotto Activo': {'09:00 AM': '04', '10:00 AM': '12'},
+          'La Granjita': {'09:00 AM': '25'},
+      },
+  }
 
-if __name__ == "__main__":
-    actualizar_datos_polla()
+  try:
+    # Usamos PATCH para actualizar/fusionar datos sin borrar lo que ya existe
+    response = requests.patch(DATABASE_URL, json=datos_a_enviar)
+
+    if response.status_code == 200:
+      print('¡ÉXITO! Datos enviados e integrados correctamente en Firebase.')
+    else:
+      print(
+          f'Error al guardar en Firebase: Status {response.status_code} -'
+          f' {response.text}'
+      )
+
+  except Exception as e:
+    print(f'Ocurrió un error en la conexión: {e}')
 
 
-  
+if __name__ == '__main__':
+  actualizar_datos_polla()
+

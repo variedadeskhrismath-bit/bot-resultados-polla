@@ -1,4 +1,4 @@
-  import json
+import json
 from bs4 import BeautifulSoup
 import requests
 
@@ -80,3 +80,6 @@ def ejecutar_scraper_y_aciertos():
 if __name__ == "__main__":
   ejecutar_scraper_y_aciertos()
 
+ 
+ 
+   

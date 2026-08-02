@@ -1,94 +1,74 @@
-import os
-import requests
+
+           import json
 from bs4 import BeautifulSoup
-import json
+import requests
 
-# URL de tu base de datos Firebase
-FIREBASE_URL = "https://polla-la-fortuna00-8bd4a-default-rtdb.firebaseio.com/polla_data"
+FIREBASE_URL = (
+    "https://polla-la-fortuna00-8bd4a-default-rtdb.firebaseio.com/polla_data"
+)
 
-# Mapeo de loterías
-LOTERIAS = {
-    "LOTTO ACTIVO": "lotto-activo",
-    "GRANJITA": "la-granjita",
-    "SELVA PLUS": "selva-plus"
-}
 
-def obtener_datos_firebase():
-    """ Lee los datos actuales de la Polla desde Firebase """
-    response = requests.get(f"{FIREBASE_URL}.json")
-    if response.status_code == 200:
-        return response.json()
-    return None
+def ejecutar_scraper_y_aciertos():
+  # 1. Extraer resultados
+  url = "https://loteriadehoy.com/animalitos/lotto-activo/"
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      )
+  }
 
-def guardar_resultados_firebase(resultados):
-    """ Guarda los resultados extraídos en Firebase """
-    url = f"{FIREBASE_URL}/resultados.json"
-    requests.put(url, data=json.dumps(resultados))
+  try:
+    res = requests.get(url, headers=headers, timeout=10)
+    resultados = {}
 
-def guardar_participantes_firebase(participantes):
-    """ Guarda la lista de participantes reordenada """
-    url = f"{FIREBASE_URL}/participantes.json"
-    requests.put(url, data=json.dumps(participantes))
+    if res.status_code == 200:
+      soup = BeautifulSoup(res.text, "html.parser")
+      for fila in soup.find_all("tr"):
+        celdas = fila.find_all("td")
+        if len(celdas) >= 2:
+          hora = celdas[0].text.strip()
+          num_limpio = "".join(filter(str.isdigit, celdas[1].text.strip()))
+          if hora and num_limpio:
+            resultados[hora] = num_limpio.zfill(2)
 
-def extraer_resultados_web():
-    """ Extrae los resultados del día desde loteriadehoy.com """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
-    nuevos_resultados = {}
-    
-    try:
-        url = "https://loteriadehoy.com"
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Buscar tarjetas o bloques de resultados
-            # Extrae la información de números/animalitos publicados
-            print("🌐 Lectura exitosa de Loteriadehoy.com")
-        else:
-            print(f"⚠️ Error al conectar a Loteriadehoy: Status {response.status_code}")
-    except Exception as e:
-        print(f"❌ Error durante la extracción web: {e}")
-        
-    return nuevos_resultados
+      # Guardar resultados en Firebase
+      if resultados:
+        requests.patch(
+            f"{FIREBASE_URL}/resultados.json", data=json.dumps(resultados)
+        )
+        print("✅ Resultados de Loteriadehoy actualizados.")
 
-def ejecutar_recuento_aciertos():
-    data = obtener_datos_firebase()
-    if not data:
-        print("No se encontraron datos en Firebase.")
-        return
-    
-    resultados = data.get('resultados', {})
-    participantes = data.get('participantes', [])
+    # 2. Calcular aciertos de los participantes
+    r_res = requests.get(f"{FIREBASE_URL}/resultados.json").json() or {}
+    ganadores = set(r_res.values())
 
-    # Obtener lista de todos los animales/números ganadores registrados
-    ganadores = set()
-    if isinstance(resultados, dict):
-        for lot, horas in resultados.items():
-            if isinstance(horas, dict):
-                for h, num in horas.items():
-                    if num and str(num).strip() != "":
-                        ganadores.add(str(num).strip())
+    r_part = requests.get(f"{FIREBASE_URL}/participantes.json").json() or {}
 
-    # Recalcular aciertos de cada jugador
-    if participantes and isinstance(participantes, list):
-        for p in participantes:
-            jugadas = p.get('jugadas', [])
-            aciertos = sum(1 for j in jugadas if str(j).strip() in ganadores)
-            p['aciertos'] = aciertos
+    if r_part:
+      if isinstance(r_part, dict):
+        for clave, jugador in r_part.items():
+          jugadas = set(jugador.get("jugadas", []))
+          aciertos = len(jugadas.intersection(ganadores))
+          requests.patch(
+              f"{FIREBASE_URL}/participantes/{clave}.json",
+              data=json.dumps({"aciertos": aciertos}),
+          )
+      elif isinstance(r_part, list):
+        for i, jugador in enumerate(r_part):
+          if jugador:
+            jugadas = set(jugador.get("jugadas", []))
+            aciertos = len(jugadas.intersection(ganadores))
+            requests.patch(
+                f"{FIREBASE_URL}/participantes/{i}.json",
+                data=json.dumps({"aciertos": aciertos}),
+            )
+      print("🎯 Aciertos calculados exitosamente.")
 
-        # Ordenar de mayor a menor aciertos
-        participantes.sort(key=lambda x: x.get('aciertos', 0), reverse=True)
+  except Exception as e:
+    print(f"❌ Error en el proceso: {e}")
 
-        # Guardar tabla actualizada
-        guardar_participantes_firebase(participantes)
-        print("🏆 Tabla de posiciones reordenada exitosamente.")
-    else:
-        print("No hay participantes para calcular.")
 
+# Si se ejecuta directamente el archivo
 if __name__ == "__main__":
-    print("🚀 Iniciando ejecucion del bot Polla La Fortuna...")
-    extraer_resultados_web()
-    ejecutar_recuento_aciertos()
+  ejecutar_scraper_y_aciertos()
 

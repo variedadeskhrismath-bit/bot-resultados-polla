@@ -2,9 +2,8 @@ name: Executar Scraper Polla
 
 on:
   schedule:
-    # Se ejecuta automáticamente cada 15 minutos
     - cron: '*/15 * * * *'
-  workflow_dispatch: # Permite ejecutarlo manualmente con un botón
+  workflow_dispatch:
 
 jobs:
   ejecutar-scraper:

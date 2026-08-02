@@ -1,5 +1,5 @@
 
-           import json
+  import json
 from bs4 import BeautifulSoup
 import requests
 
@@ -9,21 +9,25 @@ FIREBASE_URL = (
 
 
 def ejecutar_scraper_y_aciertos():
-  # 1. Extraer resultados
   url = "https://loteriadehoy.com/animalitos/lotto-activo/"
   headers = {
       "User-Agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+          " like Gecko) Chrome/120.0.0.0 Safari/537.36"
       )
   }
 
   try:
-    res = requests.get(url, headers=headers, timeout=10)
-    resultados = {}
+    print("🔎 Intentando conectar con Loteriadehoy...")
+    res = requests.get(url, headers=headers, timeout=15)
+    print(f"Respuesta HTTP: {res.status_code}")
 
+    resultados = {}
     if res.status_code == 200:
       soup = BeautifulSoup(res.text, "html.parser")
-      for fila in soup.find_all("tr"):
+      filas = soup.find_all("tr")
+
+      for fila in filas:
         celdas = fila.find_all("td")
         if len(celdas) >= 2:
           hora = celdas[0].text.strip()
@@ -31,44 +35,49 @@ def ejecutar_scraper_y_aciertos():
           if hora and num_limpio:
             resultados[hora] = num_limpio.zfill(2)
 
-      # Guardar resultados en Firebase
+      print(f"📊 Resultados encontrados: {resultados}")
+
       if resultados:
         requests.patch(
             f"{FIREBASE_URL}/resultados.json", data=json.dumps(resultados)
         )
-        print("✅ Resultados de Loteriadehoy actualizados.")
+        print("✅ Resultados guardados en Firebase.")
 
-    # 2. Calcular aciertos de los participantes
-    r_res = requests.get(f"{FIREBASE_URL}/resultados.json").json() or {}
-    ganadores = set(r_res.values())
+    # 2. Re-calcular aciertos
+    print("🔄 Recalculando aciertos...")
+    res_sorteos = requests.get(f"{FIREBASE_URL}/resultados.json")
+    r_res = res_sorteos.json() if res_sorteos.status_code == 200 else {}
+    ganadores = set(r_res.values()) if isinstance(r_res, dict) else set()
 
-    r_part = requests.get(f"{FIREBASE_URL}/participantes.json").json() or {}
+    res_part = requests.get(f"{FIREBASE_URL}/participantes.json")
+    r_part = res_part.json() if res_part.status_code == 200 else {}
 
     if r_part:
       if isinstance(r_part, dict):
         for clave, jugador in r_part.items():
-          jugadas = set(jugador.get("jugadas", []))
-          aciertos = len(jugadas.intersection(ganadores))
-          requests.patch(
-              f"{FIREBASE_URL}/participantes/{clave}.json",
-              data=json.dumps({"aciertos": aciertos}),
-          )
+          if isinstance(jugador, dict):
+            jugadas = set(jugador.get("jugadas", []))
+            aciertos = len(jugadas.intersection(ganadores))
+            requests.patch(
+                f"{FIREBASE_URL}/participantes/{clave}.json",
+                data=json.dumps({"aciertos": aciertos}),
+            )
       elif isinstance(r_part, list):
         for i, jugador in enumerate(r_part):
-          if jugador:
+          if isinstance(jugador, dict):
             jugadas = set(jugador.get("jugadas", []))
             aciertos = len(jugadas.intersection(ganadores))
             requests.patch(
                 f"{FIREBASE_URL}/participantes/{i}.json",
                 data=json.dumps({"aciertos": aciertos}),
             )
-      print("🎯 Aciertos calculados exitosamente.")
+
+      print("🎯 Aciertos calculados con éxito.")
 
   except Exception as e:
-    print(f"❌ Error en el proceso: {e}")
+    print(f"❌ Error durante el proceso: {e}")
 
 
-# Si se ejecuta directamente el archivo
 if __name__ == "__main__":
   ejecutar_scraper_y_aciertos()
 
